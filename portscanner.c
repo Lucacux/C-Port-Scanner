@@ -7,6 +7,8 @@
 #include <netdb.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h> // Required for the read () function
+#include <arpa/inet.h> // Required for inet_pton()
 
 int main(int argc, char **argv){
 
@@ -16,7 +18,8 @@ int main(int argc, char **argv){
     struct sockaddr_in sa;
 
     printf("Enter hostname or IP:");
-    gets(hostname);
+    fgets(hostname, sizeof(hostname), stdin); // Read up to 100 characters.
+    hostname[strcspn(hostname, "\n")] = '\0';  // Remove the newline character at the end
 
     printf("\n");
 
@@ -27,41 +30,46 @@ int main(int argc, char **argv){
 
     printf("Enter end port number: ");
     scanf("%d", &end);
-
-    strncpy((char*)&sa, "", sizeof sa);
+    
+    // Init. 'sa' structure to zero.
+    memset(&sa, 0, sizeof(sa)); // Clear the structure
     sa.sin_family = AF_INET;
 
-    if(isdigit(hostname[0])){
-        sa.sin_addr.s_addr = inet_addr(hostname);  
-    }
-    else if (  (host = gethostbyname(hostname)) != 0){
-        strncpy((char*)&sa.sin_addr, (char*) host->h_addr, sizeof sa.sin_addr);
-    }
-    else {
-        herror(hostname);
-        exit(2);
+    // If the hostname is a valid IP, use inet_pton to convert it.
+    if (inet_pton(AF_INET, hostname, &sa.sin_addr) <= 0) {
+        // If it's not a valid IP, try resolving the hostname
+        if ((host = gethostbyname(hostname)) != NULL) {
+            memcpy(&sa.sin_addr, host->h_addr, host->h_length);
+        } else {
+            perror("Hostname resolution failed");
+            exit(2);
+        }
     }
 
+    // Scan the specified port range
     for(i = start;  i <= end; i++){
         printf("Scanning port %i\n",i);
 
         sa.sin_port = htons(i);
         sock = socket(AF_INET, SOCK_STREAM, 0);
 
-        if(socket < 0){
+        // Check if socket creation failed
+        if(sock < 0){
+            perror("Socket creation failed");
             exit(1);    
         }
 
         err = connect(sock, (struct sockaddr*)&sa, sizeof sa);
 
         if (err < 0){
-            fflush(stdout);
+            // If connection fails, the port is closed
+            printf("Port %i is closed\n", i);
         }
         else {
+            // If connection succeeds, the port is open
             printf("Port %i is open\n", i);
         }
         close(sock);
     }
-    fflush(stdout);
     return 0;
 }
